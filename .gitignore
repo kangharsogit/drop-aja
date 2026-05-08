@@ -1,0 +1,27 @@
+# Data paste user (jangan di-publish!)
+data/
+*.bak
+*.backup
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Environment
+.env
+.env.local
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+docker-compose.yml

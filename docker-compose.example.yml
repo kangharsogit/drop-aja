@@ -1,0 +1,12 @@
+services:
+  drop:
+    build: .
+    container_name: drop
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    environment:
+      - PUBLIC_URL=${PUBLIC_URL:-http://localhost:8080}
+      - TZ=${TZ:-UTC}
