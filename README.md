@@ -93,11 +93,17 @@ curl https://your-domain.com/delete/<slug>/<delete_token>
 ## 🗂 Struktur
 drop-aja/
 ├── Dockerfile
+
 ├── docker-compose.example.yml
+
 ├── app.py              # Flask app, single file (~280 baris)
+
 ├── .env.example
+
 ├── .gitignore
+
 ├── LICENSE
+
 └── README.md
 
 ## 🔐 Catatan Keamanan
