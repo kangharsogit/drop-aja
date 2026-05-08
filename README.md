@@ -2,6 +2,10 @@
 
 > **Suntuk? Drop Aja.** — Self-hosted instant HTML hosting.
 
+[![BtTwBRe.md.png](https://iili.io/BtTwBRe.md.png)](https://freeimage.host/i/BtTwBRe)
+
+[![BtTwxxj.md.png](https://iili.io/BtTwxxj.md.png)](https://freeimage.host/i/BtTwxxj)
+
 Paste HTML, dapat URL live yang langsung dirender. No signup, no API key, no drama.
 Open-source alternative untuk [pagedrop.io](https://pagedrop.io), [tiiny.host](https://tiiny.host), dan teman-temannya.
 
