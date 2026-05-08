@@ -10,3 +10,8 @@ services:
     environment:
       - PUBLIC_URL=${PUBLIC_URL:-http://localhost:8080}
       - TZ=${TZ:-UTC}
+      # Optional: Cloudflare Turnstile (anti-bot for /upload form)
+      # Get keys from https://dash.cloudflare.com → Turnstile (free)
+      # Leave empty/unset to disable Turnstile
+      - TURNSTILE_SITE_KEY=${TURNSTILE_SITE_KEY:-}
+      - TURNSTILE_SECRET_KEY=${TURNSTILE_SECRET_KEY:-}

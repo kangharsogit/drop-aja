@@ -1,11 +1,33 @@
 from flask import Flask, request, send_from_directory, redirect, abort, url_for, make_response
-import os, secrets, string, time, json, threading
+import os, secrets, string, time, json, threading, requests
 
 app = Flask(__name__)
 DATA_DIR = '/data'
 os.makedirs(DATA_DIR, exist_ok=True)
 PUBLIC_URL = os.environ.get('PUBLIC_URL', '').rstrip('/')
 MAX_BYTES = 5 * 1024 * 1024  # 5 MB
+
+# Cloudflare Turnstile (anti-bot)
+TURNSTILE_SITE_KEY = os.environ.get('TURNSTILE_SITE_KEY', '')
+TURNSTILE_SECRET_KEY = os.environ.get('TURNSTILE_SECRET_KEY', '')
+TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
+
+
+def verify_turnstile(token, remote_ip=None):
+    """Verifikasi token Turnstile ke Cloudflare. True kalau valid atau Turnstile non-aktif."""
+    if not TURNSTILE_SECRET_KEY:
+        return True  # Turnstile tidak dikonfigurasi -> skip (backward compatible)
+    if not token:
+        return False
+    try:
+        data = {'secret': TURNSTILE_SECRET_KEY, 'response': token}
+        if remote_ip:
+            data['remoteip'] = remote_ip
+        r = requests.post(TURNSTILE_VERIFY_URL, data=data, timeout=5)
+        return r.json().get('success', False)
+    except Exception:
+        return False
+
 
 INDEX = '''<!DOCTYPE html>
 <html lang="id"><head><meta charset="UTF-8">
@@ -16,6 +38,7 @@ INDEX = '''<!DOCTYPE html>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+{{TURNSTILE_SCRIPT}}
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -116,6 +139,9 @@ button[type=submit]{
 button[type=submit]:hover{transform:translateY(-1px);
   box-shadow:0 12px 28px -8px rgba(167,139,250,.7)}
 button[type=submit]:active{transform:translateY(0)}
+.turnstile-wrap{
+  margin-top:1rem;display:flex;justify-content:center;
+}
 .features{
   display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
   gap:.75rem;margin-top:2rem;
@@ -172,6 +198,7 @@ button[type=submit]:active{transform:translateY(0)}
 </div>
 <button type="submit">Drop &amp; dapat URL →</button>
 </div>
+{{TURNSTILE_WIDGET}}
 </form>
 </div>
 <div class="features">
@@ -185,6 +212,7 @@ Public service — anyone can post &amp; view.<br>
 API: <code>POST /api/upload</code> · JSON: <code>{"html":"...","ttl":"86400"}</code>
 </div>
 </div></body></html>'''
+
 
 DONE = '''<!DOCTYPE html>
 <html lang="id"><head><meta charset="UTF-8"><title>✓ Live — Suntuk? Drop Aja</title>
@@ -273,11 +301,59 @@ h2{{font-size:1.6rem;font-weight:800;letter-spacing:-.02em;margin-bottom:.4rem}}
 </div>
 </div></body></html>'''
 
+
+ERROR = '''<!DOCTYPE html>
+<html lang="id"><head><meta charset="UTF-8"><title>✗ Error — Suntuk? Drop Aja</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex,nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{font-family:'Inter',-apple-system,sans-serif;background:#0a0a0b;color:#f0f0f2;
+min-height:100vh;display:flex;justify-content:center;align-items:center;padding:1.5rem;
+background-image:radial-gradient(at 50% 30%,rgba(244,114,182,.12) 0,transparent 55%)}}
+.box{{background:#16161a;border:1px solid #26262d;border-radius:18px;
+padding:2.5rem 2rem;max-width:480px;width:100%;text-align:center}}
+.x{{width:64px;height:64px;border-radius:50%;
+background:linear-gradient(135deg,#f472b6 0%,#ef4444 100%);
+display:inline-flex;align-items:center;justify-content:center;
+font-size:1.8rem;color:#0a0a0b;font-weight:900;margin-bottom:1rem}}
+h2{{font-size:1.4rem;font-weight:800;margin-bottom:.5rem}}
+p{{color:#8a8a93;font-size:.95rem;margin-bottom:1.5rem;line-height:1.6}}
+a{{background:#1a1a1f;color:#f0f0f2;border:1px solid #26262d;
+padding:.6rem 1.2rem;border-radius:8px;text-decoration:none;font-weight:500;font-size:.9rem}}
+a:hover{{border-color:#3a3a44}}
+</style></head><body>
+<div class="box"><div class="x">✗</div><h2>{title}</h2><p>{message}</p><a href="/">← Kembali</a></div>
+</body></html>'''
+
+
+def render_index():
+    """Render halaman index dengan/tanpa Turnstile sesuai konfigurasi."""
+    if TURNSTILE_SITE_KEY:
+        script = '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>'
+        widget = (f'<div class="turnstile-wrap">'
+                  f'<div class="cf-turnstile" data-sitekey="{TURNSTILE_SITE_KEY}" '
+                  f'data-theme="dark" data-size="flexible"></div>'
+                  f'</div>')
+    else:
+        script = ''
+        widget = ''
+    return INDEX.replace('{{TURNSTILE_SCRIPT}}', script).replace('{{TURNSTILE_WIDGET}}', widget)
+
+
+def render_error(title, message, status=400):
+    return ERROR.format(title=title, message=message), status
+
+
 def gen_slug(n=7):
     return ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(n))
 
+
 def safe_slug(s):
     return s and len(s) <= 32 and all(c.isalnum() or c in '-_' for c in s)
+
 
 def save_paste(html, ttl):
     if not html.strip():
@@ -305,21 +381,40 @@ def save_paste(html, ttl):
         json.dump(meta, f)
     return (slug, token), None
 
+
+def client_ip():
+    """Ambil IP asli client (Cloudflare-aware)."""
+    return request.headers.get('CF-Connecting-IP') or request.remote_addr
+
+
 @app.route('/', methods=['GET'])
 def index():
-    return INDEX
+    return render_index()
+
 
 @app.route('/upload', methods=['POST'])
 def upload():
+    # Verifikasi Turnstile (kalau diaktifkan)
+    if TURNSTILE_SECRET_KEY:
+        token = request.form.get('cf-turnstile-response', '')
+        if not verify_turnstile(token, client_ip()):
+            return render_error(
+                'Verifikasi gagal',
+                'Anti-bot check tidak lolos. Refresh halaman dan coba lagi.',
+                403
+            )
+
     result, err = save_paste(request.form.get('html', ''), request.form.get('ttl', '0'))
     if err:
-        return err, 400
-    slug, token = result
+        return render_error('Upload gagal', err, 400)
+    slug, dtoken = result
     url = f'{PUBLIC_URL}/p/{slug}' if PUBLIC_URL else url_for('view', slug=slug, _external=True)
-    return DONE.format(url=url, token=token, slug=slug, public=PUBLIC_URL or '')
+    return DONE.format(url=url, token=dtoken, slug=slug, public=PUBLIC_URL or '')
+
 
 @app.route('/api/upload', methods=['POST'])
 def api_upload():
+    # API endpoint TIDAK memakai Turnstile (untuk automation/script)
     if request.is_json:
         d = request.get_json(silent=True) or {}
         html, ttl = d.get('html', ''), d.get('ttl', '0')
@@ -328,9 +423,10 @@ def api_upload():
     result, err = save_paste(html, ttl)
     if err:
         return {'error': err}, 400
-    slug, token = result
+    slug, dtoken = result
     url = f'{PUBLIC_URL}/p/{slug}' if PUBLIC_URL else url_for('view', slug=slug, _external=True)
-    return {'url': url, 'slug': slug, 'delete_token': token}
+    return {'url': url, 'slug': slug, 'delete_token': dtoken}
+
 
 @app.route('/p/<slug>')
 def view(slug):
@@ -354,6 +450,7 @@ def view(slug):
     resp.headers['Content-Security-Policy'] = "frame-ancestors 'self'"
     return resp
 
+
 @app.route('/delete/<slug>/<token>', methods=['GET', 'POST'])
 def delete(slug, token):
     if not safe_slug(slug):
@@ -372,11 +469,14 @@ def delete(slug, token):
         pass
     return 'Deleted', 200
 
+
 @app.route('/healthz')
 def healthz():
     return 'ok'
 
+
 def gc_loop():
+    """Background garbage collector — hapus paste expired tiap 1 jam."""
     while True:
         time.sleep(3600)
         now = time.time()
@@ -396,6 +496,7 @@ def gc_loop():
                         pass
         except Exception:
             pass
+
 
 threading.Thread(target=gc_loop, daemon=True).start()
 
