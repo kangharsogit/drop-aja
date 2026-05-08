@@ -92,6 +92,7 @@ curl https://your-domain.com/delete/<slug>/<delete_token>
 
 ## 🗂 Struktur
 drop-aja/
+
 ├── Dockerfile
 
 ├── docker-compose.example.yml
